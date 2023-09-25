@@ -5,206 +5,223 @@ import json
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
 
 load_dotenv()
 
-class RD:
-    rd_apitoken = os.getenv('RD_APITOKEN')
-    base_url = 'https://api.real-debrid.com/rest/1.0'
-    header = {'Authorization': "Bearer " + str(rd_apitoken)}   
-    error_codes = json.load(open(os.path.join(Path(__file__).parent.absolute(), 'error_codes.json')))
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s]: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
-    def __init__(self):
-        self.check_token(self.rd_apitoken)
-        self.system = self.System()
-        self.user = self.User()
-        self.unrestrict = self.Unrestrict()
-        self.traffic = self.Traffic()
-        self.streaming = self.Streaming()
-        self.downloads = self.Downloads()
-        self.torrents = self.Torrents()
-        self.hosts = self.Hosts()
-        self.settings = self.Settings()
+class RD:
+    def __init__(self, api_token=None):
+        if api_token is None:
+            # If api_token is not provided, try to fetch it from environment variables
+            api_token = os.getenv('RD_APITOKEN')
+        if api_token is None or api_token == '':
+            raise ValueError('API Token is empty, please provide a valid token.')
+        
+        self.rd_apitoken = api_token
+        self.base_url = 'https://api.real-debrid.com/rest/1.0'
+        self.header = {'Authorization': "Bearer " + str(self.rd_apitoken)}
+        self.error_codes = json.load(open(os.path.join(Path(__file__).parent.absolute(), 'error_codes.json')))
+        self.system = self.System(self)
+        self.user = self.User(self)
+        self.unrestrict = self.Unrestrict(self)
+        self.traffic = self.Traffic(self)
+        self.streaming = self.Streaming(self)
+        self.downloads = self.Downloads(self)
+        self.torrents = self.Torrents(self)
+        self.hosts = self.Hosts(self)
+        self.settings = self.Settings(self)
 
     def get(self, path, **options):
         request = requests.get(self.base_url + path, headers=self.header, params=options)
-        return self.handler(request, self.error_codes)
+        return self.handler(request)
 
     def post(self, path, **payload):
         request = requests.post(self.base_url + path, headers=self.header, data=payload)
-        return self.handler(request, self.error_codes)
-    
+        return self.handler(request)
+
     def put(self, path, filepath, **payload):
-        file = open(filepath, 'rb')
-        request = requests.put(self.base_url + path, headers=self.header, data=file, params=payload)
-        file.close()
-        return self.handler(request, self.error_codes)
+        with open(filepath, 'rb') as file:
+            request = requests.put(self.base_url + path, headers=self.header, data=file, params=payload)
+        return self.handler(request)
 
     def delete(self, path):
         request = requests.delete(self.base_url + path, headers=self.header)
-        return self.handler(request, self.error_codes)
-    
-    def handler(self, request, error_codes):
+        return self.handler(request)
+
+    def handler(self, request):
         try:
             request.raise_for_status()
         except requests.exceptions.HTTPError as errh:
-            print (errh)
+            logging.error(errh)
         except requests.exceptions.ConnectionError as errc:
-            print (errc)
+            logging.error(errc)
         except requests.exceptions.Timeout as errt:
-            print (errt)
+            logging.error(errt)
         except requests.exceptions.RequestException as err:
-            print (err)
+            logging.error(err)
+        
         try:
             if 'error_code' in request.json():
                 code = request.json()['error_code']
-                print(code + ': ' + error_codes[code])
-        except:
-            pass
+                error_message = self.error_codes.get(code, 'Unknown Error')
+                logging.error(f'Error {code}: {error_message}')
+        except Exception as e:
+            logging.error(f'An error occurred while handling the response: {e}')
+
         return request
-    
+
     def check_token(self, token):
-        if token is None or token == 'your_token_here':
-            print('Add token to .env')
+        if token is None or token == '':
+            logging.error('API Token is empty, please add a token.')
+        else:
+            logging.info('API Token is valid')
 
     class System:
-        def __init__(self):
-            pass
+        def __init__(self, rd):
+            self.rd = rd
 
         def disable_token(self):
-            return RD().get('/disable_access_token')
+            return self.rd.get('/disable_access_token')
 
         def time(self):
-            return RD().get('/time')
+            return self.rd.get('/time')
 
         def iso_time(self):
-            return RD().get('/time/iso')
+            return self.rd.get('/time/iso')
 
     class User:
-        def __init__(self):
-            pass 
+        def __init__(self, rd):
+            self.rd = rd
 
         def get(self):
-            return RD().get('/user')
+            return self.rd.get('/user').json()
 
     class Unrestrict:
-        def __init__(self):
-            pass  
+        def __init__(self, rd):
+            self.rd = rd
 
         def check(self, link, password=None):
-            return RD().post('/unrestrict/check', link=link, password=password)
+            return self.rd.post('/unrestrict/check', link=link, password=password).json()
 
         def link(self, link, password=None, remote=None):
-            return RD().post('/unrestrict/link', link=link, password=password, remote=remote)
-        
+            return self.rd.post('/unrestrict/link', link=link, password=password, remote=remote).json()
+
         def folder(self, link):
-            return RD().post('/unrestrict/folder', link=link)
-        
+            return self.rd.post('/unrestrict/folder', link=link)
+
         def container_file(self, filepath):
-            return RD().put('/unrestrict/containerFile', filepath=filepath)
+            return self.rd.put('/unrestrict/containerFile', filepath=filepath)
 
         def container_link(self, link):
-            return RD().post('/unrestrict/containerLink', link=link)
-        
+            return self.rd.post('/unrestrict/containerLink', link=link)
+
     class Traffic:
-        def __init__(self):
-            pass  
+        def __init__(self, rd):
+            self.rd = rd
 
         def get(self):
-            return RD().get('/traffic')
+            return self.rd.get('/traffic').json()
 
         def details(self, start=None, end=None):
-            return RD().get('/traffic/details', start=start, end=end)        
-        
+            return self.rd.get('/traffic/details', start=start, end=end).json()
+
     class Streaming:
-        def __init__(self):
-            pass
+        def __init__(self, rd):
+            self.rd = rd
 
         def transcode(self, id):
-            return RD().get('/streaming/transcode/' + str(id))
+            return self.rd.get('/streaming/transcode/' + str(id)).json()
 
         def media_info(self, id):
-            return RD().get('/streaming/mediaInfos/' + str(id))
-        
-    class Downloads:
-        def __init__(self):
-            pass
+            return self.rd.get('/streaming/mediaInfos/' + str(id)).json()
 
-        def get(self, offset=None, page=None, limit=None ):
-            return RD().get('/downloads', offset=offset, page=page, limit=limit)
-        
+    class Downloads:
+        def __init__(self, rd):
+            self.rd = rd
+
+        def get(self, offset=None, page=None, limit=None):
+            return self.rd.get('/downloads', offset=offset, page=page, limit=limit)
+
         def delete(self, id):
-            return RD().delete('/downloads/delete/'+ str(id))
+            return self.rd.delete('/downloads/delete/'+ str(id))
 
     class Torrents:
-        def __init__(self):
-            pass
+        def __init__(self, rd):
+            self.rd = rd
 
-        def get(self, offset=None, page=None, limit=None, filter=None ):
-            return RD().get('/torrents', offset=offset, page=page, limit=limit, filter=filter)
-        
+        def get(self, offset=None, page=None, limit=None, filter=None):
+            return self.rd.get('/torrents', offset=offset, page=page, limit=limit, filter=filter)
+
         def info(self, id):
-            return RD().get('/torrents/info/' + str(id))
+            return self.rd.get('/torrents/info/' + str(id))
 
         def instant_availability(self, hash):
-            return RD().get('/torrents/instantAvailability/' + str(hash))
+            return self.rd.get('/torrents/instantAvailability/' + str(hash))
 
         def active_count(self):
-            return RD().get('/torrents/activeCount')
-        
+            return self.rd.get('/torrents/activeCount')
+
         def available_hosts(self):
-            return RD().get('/torrents/availableHosts')
+            return self.rd.get('/torrents/availableHosts')
 
         def add_file(self, filepath, host=None):
-            return RD().put('/torrents/addTorrent', filepath=filepath, host=host)
-        
+            return self.rd.put('/torrents/addTorrent', filepath=filepath, host=host)
+
         def add_magnet(self, magnet, host=None):
             magnet_link = 'magnet:?xt=urn:btih:' + str(magnet)
-            return RD().post('/torrents/addMagnet', magnet=magnet_link, host=host)
-        
+            return self.rd.post('/torrents/addMagnet', magnet=magnet_link, host=host)
+
         def select_files(self, id, files):
-            return RD().post('/torrents/selectFiles/' + str(id), files=str(files))
-        
+            return self.rd.post('/torrents/selectFiles/' + str(id), files=str(files))
+
         def delete(self, id):
-            return RD().delete('/torrents/delete/' + str(id))
+            return self.rd.delete('/torrents/delete/' + str(id))
 
     class Hosts:
-        def __init__(self):
-            pass
+        def __init__(self, rd):
+            self.rd = rd
 
         def get(self):
-            return RD().get('/hosts')        
-        
+            return self.rd.get('/hosts')
+
         def status(self):
-            return RD().get('/hosts/status')   
+            return self.rd.get('/hosts/status')
 
         def regex(self):
-            return RD().get('/hosts/regex')  
+            return self.rd.get('/hosts/regex')
 
         def regex_folder(self):
-            return RD().get('/hosts/regexFolder')  
+            return self.rd.get('/hosts/regexFolder')
 
         def domains(self):
-            return RD().get('/hosts/domains')  
+            return self.rd.get('/hosts/domains')
 
     class Settings:
-        def __init__(self):
-            pass
+        def __init__(self, rd):
+            self.rd = rd
 
         def get(self):
-            return RD().get('/settings')
-        
+            return self.rd.get('/settings')
+
         def update(self, setting_name, setting_value):
-            return RD().post('/settings/update', setting_name=setting_name, setting_value=setting_value)
-        
+            return self.rd.post('/settings/update', setting_name=setting_name, setting_value=setting_value)
+
         def convert_points(self):
-            return RD().post('/settings/convertPoints')            
+            return self.rd.post('/settings/convertPoints')
 
         def change_password(self):
-            return RD().post('/settings/changePassword')      
+            return self.rd.post('/settings/changePassword')
 
         def avatar_file(self, filepath):
-            return RD().put('/settings/avatarFile', filepath=filepath)
-        
+            return self.rd.put('/settings/avatarFile', filepath=filepath)
+
         def avatar_delete(self):
-            return RD().delete('/settings/avatarDelete')
+            return self.rd.delete('/settings/avatarDelete')
+
